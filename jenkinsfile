@@ -1,0 +1,98 @@
+#!/usr/bin/env groovy
+
+def GIT_PATH     = 'GIT_REPO'
+def GIT_CRED     = 'GIT_CRED'
+def EMAIL_ADDR   = 'EMAIL'
+def MAIN_OWNER_EMAIL_ADDR = 'EMAIL'
+
+properties([
+    buildDiscarder(logRotator(artifactDaysToKeepStr: '', artifactNumToKeepStr: '1', daysToKeepStr: '', numToKeepStr: '10')),
+
+    disableConcurrentBuilds(),
+
+    //pipelineTriggers([ pollSCM('H/5 * * * *') ]),
+
+    parameters([
+
+        //string(defaultValue: 'master', description: '', name: 'GIT_BRANCH'),
+
+    ])
+])
+
+pipeline {
+    agent
+            {
+                label 'SLAVE_NAME'
+            }
+    tools
+            {
+			//if you want 
+                jdk 'jdk1.8.0_45_x64'
+                maven 'Maven 3.3.9'
+            }
+			
+			
+
+    stages
+            {
+                stage('Git Clone')
+                        {
+                            steps
+                                    {
+                                        checkout([
+										$class: 'GitSCM',
+										branches: [[name: '*/master']],
+										doGenerateSubmoduleConfigurations: false,
+										extensions: [],
+										submoduleCfg: [],
+										userRemoteConfigs: [[ credentialsId: GIT_CRED, url: GIT_PATH ]]
+										])
+                                    }
+                        }
+                stage('Build')
+                        {
+                            steps
+                                    {
+
+                                        sh "mvn -f pom.xml install"
+                                    }
+                        }
+                 stage('Artifact Deploy')
+                        {
+                            steps
+                                    {
+										withCredentials([
+										usernamePassword(credentialsId: 'Artifactory_il-maven-rep',
+										passwordVariable: 'artifactory_password',
+										usernameVariable: 'artifactory_user')
+										])
+                                                {
+                                                    sh "mvn -f pom.xml deploy"
+                                                }
+
+                                    }
+                        }
+            }
+			// https://jenkins.io/doc/book/pipeline/syntax/#post
+	post {
+		success {
+			emailext (
+			to:	EMAIL_ADDR,
+			cc: MAIN_OWNER_EMAIL_ADDR,
+			subject: "Success Pipeline: ${currentBuild.fullDisplayName}",
+			body: "Pipeline URL: ${env.BUILD_URL}",
+			mimeType: 'text/html'
+			)
+		}
+
+		failure {
+			emailext (
+			to:	EMAIL_ADDR,
+			cc: MAIN_OWNER_EMAIL_ADDR,
+			subject: "Failed Pipeline: ${currentBuild.fullDisplayName}",
+			body: "Pipeline URL: ${env.BUILD_URL}",
+			mimeType: 'text/html'
+			)
+		}
+    }
+} // pipeline
